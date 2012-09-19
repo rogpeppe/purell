@@ -13,6 +13,8 @@ import (
 	"strings"
 )
 
+// A set of normalization flags determines how a URL will
+// be normalized.
 type NormalizationFlags int
 
 const (
@@ -34,103 +36,80 @@ const (
 	FlagRemoveFragment
 	FlagForceHttp
 	FlagRemoveDuplicateSlashes
-	FlagRemoveWww // Should choose one or the other (in add-remove www)
-	FlagAddWww
+	FlagRemoveWWW // Should choose one or the other (in add-remove www)
+	FlagAddWWW
 	FlagSortQuery
 
-	FlagsSafe NormalizationFlags = FlagLowercaseHost | FlagLowercaseScheme | FlagUppercaseEscapes | FlagDecodeUnnecessaryEscapes | FlagRemoveDefaultPort | FlagRemoveEmptyQuerySeparator
+	FlagsSafe = FlagLowercaseHost | FlagLowercaseScheme | FlagUppercaseEscapes | FlagDecodeUnnecessaryEscapes | FlagRemoveDefaultPort | FlagRemoveEmptyQuerySeparator
 
-	FlagsUsuallySafe NormalizationFlags = FlagsSafe | FlagRemoveTrailingSlash | FlagRemoveDotSegments
+	FlagsUsuallySafe = FlagsSafe | FlagRemoveTrailingSlash | FlagRemoveDotSegments
 
-	FlagsUnsafe NormalizationFlags = FlagsUsuallySafe | FlagRemoveDirectoryIndex | FlagRemoveFragment | FlagForceHttp | FlagRemoveDuplicateSlashes | FlagRemoveWww | FlagSortQuery
+	FlagsUnsafe = FlagsUsuallySafe | FlagRemoveDirectoryIndex | FlagRemoveFragment | FlagForceHttp | FlagRemoveDuplicateSlashes | FlagRemoveWWW | FlagSortQuery
 )
 
 var rxPort = regexp.MustCompile(`(:\d+)/?$`)
 var rxDirIndex = regexp.MustCompile(`(^|/)((?:default|index)\.\w{1,4})$`)
 var rxDupSlashes = regexp.MustCompile(`/{2,}`)
 
-// MustNormalizeUrlString() returns the normalized string, and panics if an error occurs.
-// It takes an URL string as input, as well as the normalization flags.
-func MustNormalizeUrlString(u string, f NormalizationFlags) string {
-	if parsed, e := url.Parse(u); e != nil {
-		panic(e)
-	} else {
-		return MustNormalizeUrl(parsed, f)
+// MustNormalizeURLString returns the normalized URL as a string. It panics if
+// the URL cannot be parsed.
+func MustNormalizeURLString(u string, f NormalizationFlags) string {
+	s, err := NormalizeURLString(u, f)
+	if err != nil {
+		panic(err)
 	}
-	panic("Unreachable code.")
+	return s
 }
 
-// MustNormalizeUrl() returns the normalized string, and panics if an error occurs.
-// It takes a parsed URL object as input, as well as the normalization flags.
-func MustNormalizeUrl(u *url.URL, f NormalizationFlags) string {
-	if res, e := NormalizeUrl(u, f); e != nil {
-		panic(e)
-	} else {
-		return res
+// NormalizeURLString returns the returns the normalized URL as
+// as a string.
+func NormalizeURLString(u string, f NormalizationFlags) (string, error) {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return "", err
 	}
-	panic("Unreachable code.")
+	NormalizeURL(parsed, f)
+	return parsed.String(), nil
 }
 
-// NormalizeUrlString() returns the normalized string, or an error.
-// It takes an URL string as input, as well as the normalization flags.
-func NormalizeUrlString(u string, f NormalizationFlags) (string, error) {
-	if parsed, e := url.Parse(u); e != nil {
-		return "", e
-	} else {
-		return NormalizeUrl(parsed, f)
-	}
-	panic("Unreachable code.")
+var transforms = []struct {
+	flag      NormalizationFlags
+	normalize func(*url.URL)
+}{
+	{FlagLowercaseScheme, lowercaseScheme},
+	{FlagLowercaseHost, lowercaseHost},
+	{FlagRemoveDefaultPort, removeDefaultPort},
+	{FlagRemoveTrailingSlash, removeTrailingSlash},
+	{FlagRemoveDirectoryIndex, removeDirectoryIndex}, // Must be before add trailing slash
+	{FlagAddTrailingSlash, addTrailingSlash},
+	{FlagRemoveDotSegments, removeDotSegments},
+	{FlagRemoveFragment, removeFragment},
+	{FlagForceHttp, forceHttp},
+	{FlagRemoveDuplicateSlashes, removeDuplicateSlashes},
+	{FlagRemoveWWW, removeWWW},
+	{FlagAddWWW, addWWW},
+	{FlagSortQuery, sortQuery},
 }
 
-// NormalizeUrl() returns the normalized string, or an error.
-// It takes a parsed URL object as input, as well as the normalization flags.
-func NormalizeUrl(u *url.URL, f NormalizationFlags) (string, error) {
-	var normalized *url.URL = u
-	var e error
-
-	// FlagDecodeUnnecessaryEscapes has no action, since it is done automatically
-	// by parsing the string as an URL. Same for FlagUppercaseEscapes.
-	flags := map[NormalizationFlags]func(*url.URL) (*url.URL, error){
-		FlagLowercaseScheme:        lowercaseScheme,
-		FlagLowercaseHost:          lowercaseHost,
-		FlagRemoveDefaultPort:      removeDefaultPort,
-		FlagRemoveTrailingSlash:    removeTrailingSlash,
-		FlagRemoveDirectoryIndex:   removeDirectoryIndex, // Must be before add trailing slash
-		FlagAddTrailingSlash:       addTrailingSlash,
-		FlagRemoveDotSegments:      removeDotSegments,
-		FlagRemoveFragment:         removeFragment,
-		FlagForceHttp:              forceHttp,
-		FlagRemoveDuplicateSlashes: removeDuplicateSlashes,
-		FlagRemoveWww:              removeWww,
-		FlagAddWww:                 addWww,
-		FlagSortQuery:              sortQuery,
-	}
-
-	for k, v := range flags {
-		if f&k == k {
-			if normalized, e = v(normalized); e != nil {
-				return "", e
-			}
+// NormalizeURL normalizes the given URL according to the
+// given flags.
+func NormalizeURL(u *url.URL, f NormalizationFlags) {
+	for _, t := range transforms {
+		if f&t.flag == t.flag {
+			t.normalize(u)
 		}
 	}
-	return normalized.String(), e
 }
 
-func lowercaseScheme(u *url.URL) (*url.URL, error) {
-	if len(u.Scheme) > 0 {
-		u.Scheme = strings.ToLower(u.Scheme)
-	}
-	return u, nil
+func lowercaseScheme(u *url.URL) {
+	u.Scheme = strings.ToLower(u.Scheme)
 }
 
-func lowercaseHost(u *url.URL) (*url.URL, error) {
-	if len(u.Host) > 0 {
-		u.Host = strings.ToLower(u.Host)
-	}
-	return u, nil
+func lowercaseHost(u *url.URL) {
+	u.Host = strings.ToLower(u.Host)
 }
 
-func removeDefaultPort(u *url.URL) (*url.URL, error) {
+func removeDefaultPort(u *url.URL) {
 	if len(u.Host) > 0 {
 		u.Host = rxPort.ReplaceAllStringFunc(u.Host, func(val string) string {
 			if val == ":80" {
@@ -139,28 +118,25 @@ func removeDefaultPort(u *url.URL) (*url.URL, error) {
 			return val
 		})
 	}
-	return u, nil
 }
 
-func removeTrailingSlash(u *url.URL) (*url.URL, error) {
+func removeTrailingSlash(u *url.URL) {
 	if l := len(u.Path); l > 0 && strings.HasSuffix(u.Path, "/") {
 		u.Path = u.Path[:l-1]
 	} else if l = len(u.Host); l > 0 && strings.HasSuffix(u.Host, "/") {
 		u.Host = u.Host[:l-1]
 	}
-	return u, nil
 }
 
-func addTrailingSlash(u *url.URL) (*url.URL, error) {
+func addTrailingSlash(u *url.URL) {
 	if l := len(u.Path); l > 0 && !strings.HasSuffix(u.Path, "/") {
 		u.Path += "/"
 	} else if l = len(u.Host); l > 0 && !strings.HasSuffix(u.Host, "/") {
 		u.Host += "/"
 	}
-	return u, nil
 }
 
-func removeDotSegments(u *url.URL) (*url.URL, error) {
+func removeDotSegments(u *url.URL) {
 	var dotFree []string
 
 	if len(u.Path) > 0 {
@@ -180,73 +156,65 @@ func removeDotSegments(u *url.URL) (*url.URL, error) {
 			u.Path = "/" + u.Path
 		}
 	}
-	return u, nil
 }
 
-func removeDirectoryIndex(u *url.URL) (*url.URL, error) {
+func removeDirectoryIndex(u *url.URL) {
 	if len(u.Path) > 0 {
 		u.Path = rxDirIndex.ReplaceAllString(u.Path, "$1")
 	}
-	return u, nil
 }
 
-func removeFragment(u *url.URL) (*url.URL, error) {
+func removeFragment(u *url.URL) {
 	u.Fragment = ""
-	return u, nil
 }
 
-func forceHttp(u *url.URL) (*url.URL, error) {
+func forceHttp(u *url.URL) {
 	if strings.ToLower(u.Scheme) == "https" {
 		u.Scheme = "http"
 	}
-	return u, nil
 }
 
-func removeDuplicateSlashes(u *url.URL) (*url.URL, error) {
+func removeDuplicateSlashes(u *url.URL) {
 	if len(u.Path) > 0 {
 		u.Path = rxDupSlashes.ReplaceAllString(u.Path, "/")
 	}
-	return u, nil
 }
 
-func removeWww(u *url.URL) (*url.URL, error) {
+func removeWWW(u *url.URL) {
 	if len(u.Host) > 0 && strings.HasPrefix(strings.ToLower(u.Host), "www.") {
 		u.Host = u.Host[4:]
 	}
-	return u, nil
 }
 
-func addWww(u *url.URL) (*url.URL, error) {
+func addWWW(u *url.URL) {
 	if len(u.Host) > 0 && !strings.HasPrefix(strings.ToLower(u.Host), "www.") {
 		u.Host = "www." + u.Host
 	}
-	return u, nil
 }
 
-func sortQuery(u *url.URL) (*url.URL, error) {
+func sortQuery(u *url.URL) {
 	q := u.Query()
-
-	if len(q) > 0 {
-		arKeys := make([]string, len(q))
-		i := 0
-		for k, _ := range q {
-			arKeys[i] = k
-			i++
-		}
-		sort.Strings(arKeys)
-		buf := new(bytes.Buffer)
-		for _, k := range arKeys {
-			sort.Strings(q[k])
-			for _, v := range q[k] {
-				if buf.Len() > 0 {
-					buf.WriteRune('&')
-				}
-				buf.WriteString(fmt.Sprintf("%s=%s", k, url.QueryEscape(v)))
-			}
-		}
-
-		// Rebuild the raw query string
-		u.RawQuery = buf.String()
+	if len(q) == 0 {
+		return
 	}
-	return u, nil
+	arKeys := make([]string, len(q))
+	i := 0
+	for k, _ := range q {
+		arKeys[i] = k
+		i++
+	}
+	sort.Strings(arKeys)
+	buf := new(bytes.Buffer)
+	for _, k := range arKeys {
+		sort.Strings(q[k])
+		for _, v := range q[k] {
+			if buf.Len() > 0 {
+				buf.WriteRune('&')
+			}
+			buf.WriteString(fmt.Sprintf("%s=%s", k, url.QueryEscape(v)))
+		}
+	}
+
+	// Rebuild the raw query string
+	u.RawQuery = buf.String()
 }
