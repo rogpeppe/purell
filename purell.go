@@ -19,32 +19,33 @@ type NormalizationFlags int
 
 const (
 	// Safe normalizations
-	FlagLowercaseScheme NormalizationFlags = 1 << iota
-	FlagLowercaseHost
-	FlagUppercaseEscapes
-	FlagDecodeUnnecessaryEscapes
-	FlagRemoveDefaultPort
-	FlagRemoveEmptyQuerySeparator
+	LowercaseScheme Normalizations = 1 << iota
+	LowercaseHost
+	UppercaseEscapes
+	DecodeUnnecessaryEscapes
+	RemoveDefaultPort
+	RemoveEmptyQuerySeparator
 
 	// Usually safe normalizations
-	FlagRemoveTrailingSlash // Should choose one or the other (in add-remove slash)
-	FlagAddTrailingSlash
-	FlagRemoveDotSegments
+	RemoveTrailingSlash // Should choose one or the other (in add-remove slash)
+	AddTrailingSlash
+	RemoveDotSegments
 
 	// Unsafe normalizations
-	FlagRemoveDirectoryIndex
-	FlagRemoveFragment
-	FlagForceHttp
-	FlagRemoveDuplicateSlashes
-	FlagRemoveWWW // Should choose one or the other (in add-remove www)
-	FlagAddWWW
-	FlagSortQuery
+	RemoveDirectoryIndex
+	RemoveFragment
+	ForceHttp
+	RemoveDuplicateSlashes
+	RemoveWWW // Should choose one or the other (in add-remove www)
+	AddWWW
+	SortQuery
 
-	FlagsSafe = FlagLowercaseHost | FlagLowercaseScheme | FlagUppercaseEscapes | FlagDecodeUnnecessaryEscapes | FlagRemoveDefaultPort | FlagRemoveEmptyQuerySeparator
+	// Flag groups.
+	Safe = LowercaseHost | LowercaseScheme | UppercaseEscapes | DecodeUnnecessaryEscapes | RemoveDefaultPort | RemoveEmptyQuerySeparator
 
-	FlagsUsuallySafe = FlagsSafe | FlagRemoveTrailingSlash | FlagRemoveDotSegments
+	UsuallySafe = sSafe | RemoveTrailingSlash | RemoveDotSegments
 
-	FlagsUnsafe = FlagsUsuallySafe | FlagRemoveDirectoryIndex | FlagRemoveFragment | FlagForceHttp | FlagRemoveDuplicateSlashes | FlagRemoveWWW | FlagSortQuery
+	Unsafe = UsuallySafe | RemoveDirectoryIndex | RemoveFragment | ForceHttp | RemoveDuplicateSlashes | RemoveWWW | SortQuery
 )
 
 var rxPort = regexp.MustCompile(`(:\d+)/?$`)
